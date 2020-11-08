@@ -1,8 +1,8 @@
 package favicon
 
 import (
-	"os"
 	"net/http"
+	"os"
 )
 
 // have your image in /kodata-path/images/fav.png
