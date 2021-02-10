@@ -13,18 +13,19 @@ import (
 	"knative.dev/pkg/logging"
 	"knative.dev/pkg/system"
 
-	pkghandlers "github.com/itsmurugappan/http-handlers/pkg/handlers/favicon"
+	pkghandlers "github.com/itsmurugappan/http-handlers/handlers/favicon"
 )
 
 // SharedMain registers http handlers and creates other boiler plate
 // for a main method to use
-func SharedMain(ctx context.Context, port, component string, store *configmap.UntypedStore, handlers ...func(context.Context)) {
+func SharedMain(ctx context.Context, port, component string, newStore func(configmap.Logger) *configmap.UntypedStore, handlers ...func(context.Context)) {
 	logger, atomicLevel := sharedmain.SetupLoggerOrDie(ctx, component)
 	defer flush(logger)
 	ctx = logging.WithLogger(ctx, logger)
 	ctx, _ = injection.Default.SetupInformers(ctx, sharedmain.ParseAndGetConfigOrDie())
 
 	//start config map watchers
+	store := newStore(logger)
 	cmw := informer.NewInformedWatcher(kubeclient.Get(ctx), system.Namespace())
 	store.WatchConfigs(cmw)
 	sharedmain.WatchLoggingConfigOrDie(ctx, cmw, logger, atomicLevel, component)
