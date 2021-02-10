@@ -19,10 +19,11 @@ import (
 // SharedMain registers http handlers and creates other boiler plate
 // for a main method to use
 func SharedMain(ctx context.Context, port, component string, handlerInits ...func(context.Context, configmap.Watcher) Impl) {
+	ctx, _ = injection.Default.SetupInformers(ctx, sharedmain.ParseAndGetConfigOrDie())
+
 	logger, atomicLevel := sharedmain.SetupLoggerOrDie(ctx, component)
 	defer flush(logger)
 	ctx = logging.WithLogger(ctx, logger)
-	ctx, _ = injection.Default.SetupInformers(ctx, sharedmain.ParseAndGetConfigOrDie())
 
 	//start config map watchers
 	cmw := informer.NewInformedWatcher(kubeclient.Get(ctx), system.Namespace())
