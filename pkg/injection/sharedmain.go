@@ -5,39 +5,33 @@ import (
 	"net/http"
 
 	"go.uber.org/zap"
+	kubeclient "knative.dev/pkg/client/injection/kube/client"
+	"knative.dev/pkg/configmap"
+	"knative.dev/pkg/configmap/informer"
+	"knative.dev/pkg/injection"
+	"knative.dev/pkg/injection/sharedmain"
 	"knative.dev/pkg/logging"
+	"knative.dev/pkg/system"
 
 	pkghandlers "github.com/itsmurugappan/http-handlers/pkg/handlers/favicon"
 )
 
-const (
-	log_config = `{
-					        "level": "info",
-					        "development": false,
-					        "outputPaths": ["stdout"],
-					        "errorOutputPaths": ["stderr"],
-					        "encoding": "json",
-					        "encoderConfig": {
-					          "timeKey": "ts",
-					          "levelKey": "level",
-					          "nameKey": "logger",
-					          "callerKey": "caller",
-					          "messageKey": "msg",
-					          "stacktraceKey": "stacktrace",
-					          "lineEnding": "",
-					          "levelEncoder": "",
-					          "timeEncoder": "iso8601",
-					          "durationEncoder": "",
-					          "callerEncoder": ""
-					        }
-      					}`
-)
-
 // SharedMain registers http handlers and creates other boiler plate
 // for a main method to use
-func SharedMain(ctx context.Context, port string, handlers ...func(context.Context)) {
-	logger, _ := logging.NewLogger(log_config, "")
+func SharedMain(ctx context.Context, port, component string, store *configmap.UntypedStore, handlers ...func(context.Context)) {
+	logger, atomicLevel := sharedmain.SetupLoggerOrDie(ctx, component)
+	defer flush(logger)
 	ctx = logging.WithLogger(ctx, logger)
+	ctx, _ = injection.Default.SetupInformers(ctx, sharedmain.ParseAndGetConfigOrDie())
+
+	//start config map watchers
+	cmw := informer.NewInformedWatcher(kubeclient.Get(ctx), system.Namespace())
+	store.WatchConfigs(cmw)
+	sharedmain.WatchLoggingConfigOrDie(ctx, cmw, logger, atomicLevel, component)
+	logger.Info("Starting configuration manager...")
+	if err := cmw.Start(ctx.Done()); err != nil {
+		logger.Fatalw("Failed to start configuration manager", err)
+	}
 
 	//register handlers
 	for _, h := range handlers {
@@ -49,4 +43,8 @@ func SharedMain(ctx context.Context, port string, handlers ...func(context.Conte
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
 		logger.Fatal("Error starting server", zap.Error(err))
 	}
+}
+
+func flush(logger *zap.SugaredLogger) {
+	logger.Sync()
 }
